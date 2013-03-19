@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - materials - shaders [custom]</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				color: #ffffff;
+				font-family:Monospace;
+				font-size:13px;
+				text-align:center;
+				font-weight: bold;
+
+				background-color: #050505;
+				margin: 0px;
+				overflow: hidden;
+			}
+
+			#info {
+				position: absolute;
+				top: 0px; width: 100%;
+				padding: 5px;
+			}
+
+			a {
+
+				color: #ffffff;
+			}
+
+			#oldie a { color:#da0 }
+		</style>
+	</head>
+	<body>
+
+		<div id="container"></div>
+
+		<script src="three.min.js"></script>
+
+		<script src="js/Detector.js"></script>
+		<script src="js/controls/FlyControls.js"></script>
+		<script src="js/libs/stats.min.js"></script>
+		<script src="js/libs/dat.gui.min.js"></script>
+		
+
+
+		<!-- <script src="GLOW.js"></script> -->
+		<!-- <script src="GLOWThreeCompatibility.js"></script> -->
+
+
+		<script id="shadowMapFragmentShader" type="x-shader/x-fragment">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec3 vNormal;
+			varying vec4 ProjShadow;
+			uniform sampler2D shadowmap;
+			uniform vec3 lightPos;
+			varying vec2 texture_coordinate;
+			
+			void main (void)
+			{
+			  float distanceFromLight = texture2D(shadowmap,ProjShadow.st).z;
+			  
+			  float shadow = 1.0;
+			  vec3 color = vec3(0.7, 0.9, 1.0);
+
+			  float dProd = max(0.0, dot(vNormal, normalize(lightPos)));
+			  shadow = (distanceFromLight) > (ProjShadow.z / ProjShadow.w) ? 0.5 : 1.0;
+
+			  gl_FragColor = vec4(shadow * color, 1.0);//distanceFromLight > 1.0 ? vec4(0,1,0,1) : vec4(1,0,0,1); //texture2D(shadowmap, texture_coordinate).x > 1.0 ? vec4(0,1,0,1) : vec4(1,0,0,1);
+  		  } 
+		</script>
+
+		<script id="depthMapFragmentShader" type="x-shader/x-fragment">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec4 depth;
+			uniform vec3 lightPos;
+			
+			void main (void)
+			{
+			  gl_FragColor = vec4(vec3(-depth.z), 1.0);
+			}
+
+		</script>
+		
+		<script id="shadowMapVertexShader" type="x-shader/x-vertex">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec3 vNormal;
+			varying vec4 ProjShadow;
+			uniform vec3 lightPos;
+			uniform mat4 lightWorldMatrix;
+			uniform mat4 lightProjMatrix;
+			varying vec2 texture_coordinate;
+			mat4 bias;
+			
+			void main(void)
+			{
+				bias = mat4(0.5, 0.0, 0.0, 0.0,
+                         0.0, 0.5, 0.0, 0.0,
+                         0.0, 0.0, 0.5, 0.0,
+                         0.5, 0.5, 0.5, 1.0);
+				ProjShadow	=  bias * lightProjMatrix * lightWorldMatrix * modelMatrix * vec4(position, 1.0);
+				texture_coordinate = uv;
+				vNormal = normal;
+				gl_Position =  projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);
+			}
+		</script>
+
+		<script id="depthMapVertexShader" type="x-shader/x-vertex">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec4 depth;
+			uniform vec3 lightPos;
+			uniform mat4 lightWorldMatrix;
+			uniform mat4 lightProjMatrix;
+			
+			void main(void)
+			{
+				depth = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+				//gl_Position = lightProjMatrix * lightWorldMatrix * modelMatrix * vec4(position,1.0);
+				gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);
+			}
+		</script>
+
+		<script>
+
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+
+			var container, stats;
+			var plane, plane2;
+			var sphere;
+			
+			
+			var start_time;
+
+			var camera, cameraLight, scene, renderer, controls;
+
+			var uniforms1, uniforms2, material1, material2, mesh, meshes = [];
+			var phongMaterial, basicMaterial; 
+
+			var mouseX = 0, mouseY = 0,
+			lat = 0, lon = 0, phy = 0, theta = 0;
+
+			var windowHalfX = window.innerWidth / 2;
+			var windowHalfY = window.innerHeight / 2;
+			
+			var shaderMaterialShadow, shaderMaterialDepth;
+			var gui;
+			
+			var clock = new THREE.Clock();
+			
+			var uniformsShadow, uniformsDepth;
+			
+			var composer;
+
+			//ThreeJS.init();
+			init();
+			animate();
+
+			function init() {
+			
+				// SET UP 3D context
+				container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 40, windowHalfX / windowHalfY, 1, 300 );
+				camera.position.x = 0;
+				camera.position.y = 14;
+				camera.position.z = 15;
+				
+				camera.updateProjectionMatrix();
+				
+				cameraLight = new THREE.OrthographicCamera( -10, 10, 10, -10, -10.0, 500.0 );
+				//cameraLight = new THREE.OrthographicCamera( 40, 1, 1, 300 );
+				cameraLight.position.set( 10, 3, 15 ).normalize();
+				cameraLight.lookAt(new THREE.Vector3(0,0,0));
+
+				controls = new THREE.FlyControls( camera );
+				controls.dragToLook = true;
+				controls.movementSpeed = 3.0;
+				controls.rollSpeed = 0.5;
+				camera.lookAt(new THREE.Vector3(0,1,-1));
+	
+				scene = new THREE.Scene();
+
+				start_time = Date.now();
+
+				
+				//var ambient = new THREE.AmbientLight( 0x101010 );
+				//scene.add( ambient );
+				
+				var pars = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat };
+				//scene.rtTextureDepth = new THREE.WebGLRenderTarget( 1024, 1024, pars );
+				scene.rtTextureDepth = new THREE.WebGLRenderTarget(
+																	1024,
+																	1024,
+																	{
+																	wrapS			: THREE.ClampToEdgeWrapping,
+																	wrapT			: THREE.ClampToEdgeWrapping,
+																	minFilter		: THREE.NearestFilter,
+																	magFilter		: THREE.NearestFilter,
+																	format			: THREE.RGBAFormat,
+																	type			: THREE.FloatType,
+																	depthBuffer		: true,
+																	stencilBuffer	: false
+																	}
+																);
+				
+				directionalLight = new THREE.DirectionalLight( 0xffffff );
+				directionalLight.position.set( 0, 0, 20 ).normalize();
+				directionalLight.lookAt(new THREE.Vector3(0,0,0));
+				directionalLight.exponent = 10;
+				scene.add( directionalLight );
+				
+				uniformsDepth = {
+				  lightWorldMatrix: { type: "m4", value: cameraLight.matrixWorldInverse },
+				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix }
+				};
+				
+				uniformsShadow = {
+				  lightPos: { type: "v3", value: cameraLight.position },
+				  shadowmap: { type: "t",  value: scene.rtTextureDepth  },
+				  lightWorldMatrix: { type: "m4", value: cameraLight.matrixWorldInverse },
+				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix }
+				};
+				
+				
+				var vShader = document.getElementById( 'depthMapVertexShader' ).textContent;
+				var fShader = document.getElementById( 'depthMapFragmentShader' ).textContent;
+				shaderMaterialDepth =
+				  new THREE.ShaderMaterial({
+					uniforms: uniformsDepth,
+					vertexShader:   vShader,
+					fragmentShader: fShader,
+					side: THREE.FrontSide,
+					polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+				  });
+				  
+				var vxShader = document.getElementById( 'shadowMapVertexShader' ).textContent;
+				var fxShader = document.getElementById( 'shadowMapFragmentShader' ).textContent;
+				shaderMaterialShadow =
+				  new THREE.ShaderMaterial({
+					uniforms: uniformsShadow,
+					vertexShader:   vxShader,
+					fragmentShader: fxShader,
+					side: THREE.DoubleSide,
+					polygonOffset: false, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+				  });
+				  
+
+						
+				  
+				phongMaterial = new THREE.MeshPhongMaterial( { ambient: 0x000000,
+                    color: 0x10FF10,
+                    specular: 0x0000FF,
+                    shininess: 30,
+                    side: THREE.DoubleSide } );
+				// create a point light
+				//var pointLight = new THREE.PointLight(0xFFFFFF);
+
+				// set its position
+				//pointLight.position.x = 10;
+				//pointLight.position.y = 50;
+				//pointLight.position.z = 130;
+
+				// add to the scene
+				//scene.add(pointLight);
+				
+				var material = new THREE.MeshLambertMaterial( { map: scene.rtTextureDepth } );
+
+				plane = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), shaderMaterialShadow );
+				plane.position.x = 0;
+				plane.position.y = 0;
+				plane.position.z = -5;
+				plane.rotation.x = -Math.PI/2;
+				//plane.overdraw = true;
+				scene.add(plane);
+				
+				plane2 = new THREE.Mesh(new THREE.PlaneGeometry(15, 5), shaderMaterialShadow );
+				plane2.position.x = -3;
+				plane2.position.y = 2.5;
+				plane2.position.z = -5;
+				
+				//plane2.overdraw = true;
+				//scene.add(plane2);
+				
+				var loader = new THREE.JSONLoader();
+				var material = new THREE.MeshPhongMaterial();
+				material.color = new THREE.Color( 0x00FF00 ); 
+				this.specular = new THREE.Color( 0xFFFFFF );
+				this.shininess = 30;
+				
+				loader.load( "stanford_dragon.js", function( geometry ) {
+					mesh = new THREE.Mesh( geometry, shaderMaterialDepth );
+					mesh.scale.set( 1, 1, 1 );
+					mesh.position.y = 0;
+					mesh.position.x = 0;
+					mesh.position.z = 1;
+					scene.add(mesh);
+				} );
+
+				
+				
+				var geometry = new THREE.CubeGeometry( 2, 2, 2);
+				cube = new THREE.Mesh( geometry, phongMaterial );
+					cube.position.y = 2;
+					cube.position.x = 5;
+					cube.position.z = -1;
+				scene.add(cube);
+				
+				sphere = new THREE.Mesh(geometry, phongMaterial );
+				scene.add(sphere);
+				
+				renderer = new THREE.WebGLRenderer();
+				
+				container.appendChild( renderer.domElement );
+				
+				context = renderer.getContext();
+				//document.getElementById( 'container' ).appendChild( context.domElement );
+
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.top = '0px';
+				container.appendChild( stats.domElement );
+
+				
+				
+				onWindowResize();
+
+				window.addEventListener( 'resize', onWindowResize, false );
+				
+				// Effects composer
+				/*
+				composer = new THREE.EffectComposer( renderer, scene.rtTextureDepth );
+				
+				
+				var shader = THREE.CopyShader;
+				shader.uniforms.tDiffuse = scene.rtTextureDepth;
+				var effect = new THREE.ShaderPass( THREE.CopyShader );
+				effect.renderToScreen = true;
+				composer.addPass( effect );
+				*/
+
+
+			}
+
+			function onWindowResize( event ) {
+				/*
+				uniforms1.resolution.value.x = window.innerWidth;
+				uniforms1.resolution.value.y = window.innerHeight;
+
+				uniforms2.resolution.value.x = window.innerWidth;
+				uniforms2.resolution.value.y = window.innerHeight;
+				*/
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				render();
+				stats.update();
+
+			}
+			
+			function toRadians (angle) {
+				return angle * (Math.PI / 180);
+			}
+
+			function render() {
+				renderer.clear();
+				
+				var delta = clock.getDelta();
+				
+				uniformsShadow.lightWorldMatrix.value = cameraLight.matrixWorldInverse;
+				uniformsShadow.lightProjMatrix.value =  cameraLight.projectionMatrix;
+				uniformsDepth.lightWorldMatrix.value = cameraLight.matrixWorldInverse;
+				uniformsDepth.lightProjMatrix.value = cameraLight.projectionMatrix;
+				//alert(JSON.stringify(cameraLight.matrixWorldInverse));
+				
+				// Render depth into texture      
+				scene.remove(plane);	
+				//scene.remove(plane2);
+				if (mesh != undefined)
+					mesh.material = shaderMaterialDepth;
+				cube.material = shaderMaterialDepth;
+				plane2.material = shaderMaterialDepth;
+				renderer.render( scene, cameraLight, scene.rtTextureDepth, true );
+				//cameraLight.position.x += 0.1;
+				//cameraLight.position.set( 10, 2*Math.sin(clock.getElapsedTime() / 2.0) + 2.3, 20 );
+				cameraLight.lookAt(new THREE.Vector3(0,0,0));
+				cameraLight.updateProjectionMatrix();
+				//mesh.position.z = 2 * Math.sin(clock.getElapsedTime());
+
+				scene.add(plane);
+				//scene.add(plane2);
+				if (mesh != undefined)
+				  mesh.material = phongMaterial;
+				cube.material = phongMaterial;
+				cube.rotation.y += 0.01;
+				cube.rotation.x += 0.02;
+				plane2.material = shaderMaterialShadow;
+				sphere.position.set(cameraLight.position);
+
+				//camera.autoUpdate = false;
+				//camera.projectionMatrix = cameraLight.projectionMatrix;
+				//camera.worldMatrix = cameraLight.worldMatrix;
+				//camera.worldMatrixInverse = cameraLight.worldMatrixInverse;
+				//camera.updateProjectionMatrix();
+				controls.update( delta );
+				//composer.render();
+				renderer.render( scene, camera);
+
+			}
+
+
+		</script>
+
+	</body>
+</html>
