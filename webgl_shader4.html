@@ -167,49 +167,28 @@
 			uniform sampler2D shadowTestMap;
 			uniform vec3 lightPos;
 			varying vec2 texture_coordinate;
-			
-			
-			float linDepth() {
-				float A = lightProjMatrix[2].z;
-				float B = lightProjMatrix[3].z;
-				float zNear = - B / (1.0 - A);
-				float zFar  =   B / (1.0 + A);
-
-			    //float z_b = d;
-				//float z_n = 2.0 * z_b - 1.0;
-				//float z_e = 2.0 * zNear * zFar / (zFar + zNear - z_n * (zFar - zNear));
-				float linear = 1.0 / (zFar - zNear);
-				return linear;
-			}
-			
-			float denormDepth(vec4 d) {
-
-				float linearDepth = length(d) * linDepth();
-				return linearDepth;
-			}	
 
   		  	void main (void)
 			{
-			  //vec3 depth = ProjShadow.xyz / ProjShadow.w;
-			  //depth.z = length(position.xyz - lightPos.xyz) * linDepth();
-			  //ProjShadow.z = length(position - lightPos) * linDepth();
-			  vec4 bufferSample[9];
 
-			  float pw = 0.0009765625; //1/1024
-			  bufferSample[0] = texture2D(shadowTestMap,vec2(ProjShadow.s-pw, ProjShadow.t-pw));
-			  bufferSample[1] = texture2D(shadowTestMap,vec2(ProjShadow.s, ProjShadow.t-pw));
-			  bufferSample[2] = texture2D(shadowTestMap,vec2(ProjShadow.s+pw, ProjShadow.t-pw));
-			  bufferSample[3] = texture2D(shadowTestMap,vec2(ProjShadow.s-pw, ProjShadow.t));
-			  bufferSample[4] = texture2D(shadowTestMap,ProjShadow.st);
-			  bufferSample[5] = texture2D(shadowTestMap,vec2(ProjShadow.s+pw, ProjShadow.t));
-			  bufferSample[6] = texture2D(shadowTestMap,vec2(ProjShadow.s-pw, ProjShadow.t+pw));
-			  bufferSample[7] = texture2D(shadowTestMap,vec2(ProjShadow.s, ProjShadow.t+pw));
-			  bufferSample[8] = texture2D(shadowTestMap,vec2(ProjShadow.s+pw, ProjShadow.t+pw));
+			  float bufferSample[9];
+			  float testVal = ProjShadow.z - 0.05;
+
+			  float pw = 0.0009765625; // 1/1024 shadow map resolution
+			  bufferSample[0] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t-pw)).z  > (testVal) ? 1.0 : 0.0;
+			  bufferSample[1] = texture2D(shadowmap,vec2(ProjShadow.s, ProjShadow.t-pw)).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[2] = texture2D(shadowmap,vec2(ProjShadow.s+pw, ProjShadow.t-pw)).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[3] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t)).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[4] = texture2D(shadowmap,ProjShadow.st).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[5] = texture2D(shadowmap,vec2(ProjShadow.s+pw, ProjShadow.t)).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[6] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t+pw)).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[7] = texture2D(shadowmap,vec2(ProjShadow.s, ProjShadow.t+pw)).z > (testVal) ? 1.0 : 0.0;
+			  bufferSample[8] = texture2D(shadowmap,vec2(ProjShadow.s+pw, ProjShadow.t+pw)).z > (testVal) ? 1.0 : 0.0;
 
 			  float sum;
 
 			  for(int i = 0; i < 9; i++) {
-			  	sum += bufferSample[i].x;
+			  	sum += bufferSample[i];
 			  }
 
 			  sum = sum/9.0;
@@ -217,7 +196,7 @@
 			  float shadow = sum;
 			  vec3 color = vec3(1.0);
 			  
-			  gl_FragColor = vec4(shadow * color, 1.0);//vec4(texture2D(shadowmap,ProjShadow.st).z);//vec4(shadow * color, 1.0);// //texture2D(shadowmap, texture_coordinate).x > 1.0 ? vec4(0,1,0,1) : vec4(1,0,0,1);
+			  gl_FragColor = vec4(shadow * color, 1.0);
   		  }
 
 		</script>
@@ -588,6 +567,7 @@
 
 				//scene.add(plane);
 				//scene.add(plane2);
+				/*
 				if (mesh != undefined)
 				  mesh.material = shaderMaterialShadow;
 				cube.material = shaderMaterialShadow;
@@ -597,10 +577,12 @@
 				//plane2.material = shaderMaterialShadow;
 				//sphere.position.set(cameraLight.position);
 
-				controls.update( delta );
+				
 				//composer.render();
 				renderer.render( scene, camera, scene.rtTextureTest, true );
-
+				*/
+				controls.update( delta );
+				
 				if (mesh != undefined)
 				  mesh.material = pcfShadow;
 				cube.material = pcfShadow;
