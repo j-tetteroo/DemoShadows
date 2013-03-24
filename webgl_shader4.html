@@ -158,7 +158,7 @@
 			precision highp float;
 			#endif
 			varying vec3 vNormal;
-			varying vec4 vPosition;
+			varying vec3 vPosition;
 			varying vec4 ProjShadow;
 			
 			uniform mat4 lightProjMatrix;
@@ -167,6 +167,11 @@
 			uniform sampler2D shadowTestMap;
 			uniform vec3 lightPos;
 			varying vec2 texture_coordinate;
+			
+			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
+				vec3 lightDir = normalize(lightPos);
+				return 0.1 + dot(lightDir, vertNormal);
+		    }
 
   		  	void main (void)
 			{
@@ -194,10 +199,13 @@
 			  sum = sum/9.0;
 			  
 			  float shadow = sum;
+			  float light = calcLighting(lightPos, vPosition.xyz, vNormal);
 			  vec3 color = vec3(1.0);
 			  
-			  gl_FragColor = vec4(shadow * color, 1.0);
+			  gl_FragColor = vec4(shadow * light * color, 1.0);
   		  }
+		  
+
 
 		</script>
 
@@ -206,6 +214,7 @@
 			precision highp float;
 			#endif
 			varying vec3 vNormal;
+			varying vec3 vPosition;
 			varying vec4 ProjShadow;
 
 			uniform vec3 lightPos;
@@ -221,6 +230,8 @@
                          0.0, 0.0, 1.0, 0.0,
                          0.5, 0.5, 0.0, 1.0);
 				ProjShadow	=  bias * lightProjMatrix * lightWorldMatrix * modelMatrix * vec4(position, 1.0);
+				vNormal = normal;
+				vPosition = position;
 				gl_Position =  projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);
 			}
 		</script>
