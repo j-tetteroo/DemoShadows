@@ -48,7 +48,7 @@
 			precision highp float;
 			#endif
 			varying vec3 vNormal;
-			varying vec4 vPosition;
+			varying vec3 vPosition;
 			varying vec4 ProjShadow;
 			
 			uniform mat4 lightProjMatrix;
@@ -63,22 +63,27 @@
 				float res = variance/(variance + (depth - mean) * (depth - mean));
 				return variance;
 			}
+			
+			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
+				vec3 lightDir = normalize(lightPos);
+				return 0.3 + (0.7 * dot(lightDir, vertNormal));
+		    }
 
   		  void main (void)
 			{
-			  //vec3 depth = ProjShadow.xyz / ProjShadow.w;
-			  //depth.z = length(position.xyz - lightPos.xyz) * linDepth();
-			  //ProjShadow.z = length(position - lightPos) * linDepth();
-			  vec4 bufferSample = texture2D(shadowmap,ProjShadow.st);
+			  vec3 depth = ProjShadow.xyz / ProjShadow.w;
+
+			  vec4 bufferSample = texture2D(shadowmap,depth.st);
 
 			  float distanceFromLight = bufferSample.z; //M1
 			  
 			  float shadow = 1.0;
 			  vec3 color = vec3(1.0);
 
-			  shadow = (distanceFromLight+0.05) > (ProjShadow.z) ? 1.0 : 0.0;
+			  float light = calcLighting(lightPos, vPosition, vNormal);
+			  shadow = (distanceFromLight+0.05) > (depth.z) ? 1.0 : 0.5;
 			  
-			  gl_FragColor = vec4(vec3(shadow), 1.0);//vec4(texture2D(shadowmap,ProjShadow.st).z);//vec4(shadow * color, 1.0);// //texture2D(shadowmap, texture_coordinate).x > 1.0 ? vec4(0,1,0,1) : vec4(1,0,0,1);
+			  gl_FragColor = vec4(vec3(shadow * light), 1.0);
   		  }
 
 		</script>
@@ -88,6 +93,7 @@
 			precision highp float;
 			#endif
 			varying vec3 vNormal;
+			varying vec3 vPosition;
 			varying vec4 ProjShadow;
 
 			uniform vec3 lightPos;
@@ -102,6 +108,10 @@
                          0.0, 0.5, 0.0, 0.0,
                          0.0, 0.0, 1.0, 0.0,
                          0.5, 0.5, 0.0, 1.0);
+						 
+				vNormal = normalize(mat3(modelMatrix) * normal);
+				vPosition = position;
+				
 				ProjShadow	=  bias * lightProjMatrix * lightWorldMatrix * modelMatrix * vec4(position, 1.0);
 				gl_Position =  projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);
 			}
@@ -123,43 +133,53 @@
 			uniform sampler2D shadowTestMap;
 			uniform vec3 lightPos;
 			varying vec2 texture_coordinate;
+
 			
 			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
 				vec3 lightDir = normalize(lightPos);
 				return 0.1 + dot(lightDir, vertNormal);
 		    }
+			
+			vec4 offset_lookup(sampler2D map,
+								 vec4 loc,
+								 vec2 offset)
+			{   
+				float texmapscale = 0.0009765625; // 1/1024 shadow map resolution
+				return texture2DProj(map, vec4(loc.xy + offset * texmapscale * loc.w,
+											   loc.z, loc.w));
+			}
 
   		  	void main (void)
 			{
 
-			  float bufferSample[9];
-			  float testVal = ProjShadow.z - 0.05;
+			  vec3 depth = ProjShadow.xyz / ProjShadow.w;
 
-			  /* PCF 3x3 */
-			  float pw = 0.0009765625; // 1/1024 shadow map resolution
-			  bufferSample[0] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t-pw)).z  > (testVal) ? 1.0 : 0.0;
-			  bufferSample[1] = texture2D(shadowmap,vec2(ProjShadow.s, ProjShadow.t-pw)).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[2] = texture2D(shadowmap,vec2(ProjShadow.s+pw, ProjShadow.t-pw)).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[3] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t)).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[4] = texture2D(shadowmap,ProjShadow.st).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[5] = texture2D(shadowmap,vec2(ProjShadow.s+pw, ProjShadow.t)).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[6] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t+pw)).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[7] = texture2D(shadowmap,vec2(ProjShadow.s, ProjShadow.t+pw)).z > (testVal) ? 1.0 : 0.0;
-			  bufferSample[8] = texture2D(shadowmap,vec2(ProjShadow.s+pw, ProjShadow.t+pw)).z > (testVal) ? 1.0 : 0.0;
-
-			  float sum;
-
-			  for(int i = 0; i < 9; i++) {
-			  	sum += bufferSample[i];
-			  }
-
-			  sum = sum/9.0;
+			  const int samples = 8;
+			  float sum = 0.0, x, y;
+			  float offset = -(float(samples) / 2.0) + 0.5;
+			 
+			  vec4 bufferSample;
+			  float distanceFromLight;
+				
+				for (int j = 0; j < samples; j++) {
+					for (int i = 0; i < samples; i++) {
+						x = offset + float(i);
+						y = offset + float(j);
+						bufferSample = offset_lookup(shadowmap, ProjShadow, vec2(x,y));
+						distanceFromLight = bufferSample.z;
+						sum += ((distanceFromLight+0.05) > (depth.z) ? 1.0 : 0.0);
+					}
+				}
 			  
-			  float shadow = sum;
-			  float light = calcLighting(lightPos, vPosition.xyz, vNormal);
-			  //vec3 color = vec3(1.0);
+			  sum = sum/float(samples*samples);
+
+			  float shadow = 1.0;
+			  vec3 color = vec3(1.0);
+
+			  float light = calcLighting(lightPos, vPosition, vNormal);
+			  shadow = sum;
 			  
-			  gl_FragColor = vec4(shadow * light * color, 1.0);
+			  gl_FragColor = vec4(vec3(shadow * light), 1.0);
   		  }
 		  
 
@@ -187,7 +207,7 @@
                          0.0, 0.0, 1.0, 0.0,
                          0.5, 0.5, 0.0, 1.0);
 				ProjShadow	=  bias * lightProjMatrix * lightWorldMatrix * modelMatrix * vec4(position, 1.0);
-				vNormal = normal;
+				vNormal = normalize(mat3(modelMatrix) * normal);
 				vPosition = position;
 				gl_Position =  projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);
 			}
@@ -332,6 +352,7 @@
 				
 				uniformsShadow = {
 				  color: { type: "c", value: new THREE.Color( 0xffffff ) },
+				  samples: { type: "i", value: 4 },
 				  lightPos: { type: "v3", value: cameraLight.position },
 				  shadowmap: { type: "t",  value: scene.rtTextureDepth  },
 				  shadowTestMap: { type: "t", value: scene.rtTextureTest },
@@ -448,7 +469,7 @@
 					this.cubePositionX = 10.0;
 					this.lightPositionX = -50.0;
 					this.lightPositionZ = 100.0;
-				
+					this.PCF_samples = 4;
 				}
 				
 				var cubeConfig = new cubeConfigData();
@@ -465,6 +486,25 @@
 					cameraLight.position.set( cubeConfig.lightPositionX, 50, cubeConfig.lightPositionZ ).normalize();
 					cameraLight.lookAt(new THREE.Vector3(0,0,0));
 				} );;
+				
+				gui.add(cubeConfig, 'PCF_samples', [ '8x8' ] ).onChange( function(){
+					switch (cubeConfig.PCF_samples) {
+						default:
+						case "4x4":
+							uniformsShadow.samples.value = 4;
+							break;
+						case "8x8":
+							uniformsShadow.samples.value = 8;
+							break;	
+						case "16x16":
+							uniformsShadow.samples.value = 16;
+							break;	
+						case "32x32":
+							uniformsShadow.samples.value = 16;
+							break;	
+					}
+				} );;
+				
 				//  } );
 				  //g//ui.add(text, 'speed', -5, 5);
 				 // gui.add(text, 'displayOutline');
@@ -553,25 +593,30 @@
 				if (mesh != undefined)
 				  mesh.material = shaderMaterialShadow;
 				cube.material = shaderMaterialShadow;
-				cube.rotation.y += 0.01;
-				cube.rotation.x += 0.02;
+				
+
+
 				plane.material = shaderMaterialShadow;
+				renderer.render( scene, camera );
+				*/
 				//plane2.material = shaderMaterialShadow;
 				//sphere.position.set(cameraLight.position);
-
+				
+				cube.rotation.y += 0.01;
+				cube.rotation.x += 0.02;
 				
 				//composer.render();
-				renderer.render( scene, camera, scene.rtTextureTest, true );
-				*/
-				controls.update( delta );
-				
-				uniformsShadow.color.needsUpdate = true;
 				if (mesh != undefined)
 				  mesh.material = pcfShadow;
 				cube.material = pcfShadow;
 				plane.material = pcfShadow;
 
 				renderer.render( scene, camera );
+				
+				
+				controls.update( delta );
+				
+
 
 			}
 
