@@ -40,12 +40,7 @@
 		<script src="js/Detector.js"></script>
 		<script src="js/controls/FlyControls.js"></script>
 		<script src="js/libs/stats.min.js"></script>
-		<script src="js/libs/dat.gui.min.js"></script>
-		
-
-
-		<!-- <script src="GLOW.js"></script> -->
-		<!-- <script src="GLOWThreeCompatibility.js"></script> -->
+		<script src="dat.gui.min.js"></script>
 
 
 		<script id="shadowMapFragmentShader" type="x-shader/x-fragment">
@@ -62,53 +57,12 @@
 			uniform vec3 lightPos;
 			varying vec2 texture_coordinate;
 			
-			
-			float linDepth() {
-				float A = lightProjMatrix[2].z;
-				float B = lightProjMatrix[3].z;
-				float zNear = - B / (1.0 - A);
-				float zFar  =   B / (1.0 + A);
 
-			    //float z_b = d;
-				//float z_n = 2.0 * z_b - 1.0;
-				//float z_e = 2.0 * zNear * zFar / (zFar + zNear - z_n * (zFar - zNear));
-				float linear = 1.0 / (zFar - zNear);
-				return linear;
-			}
-			
-			float denormDepth(vec4 d) {
-
-				float linearDepth = length(d) * linDepth();
-				return linearDepth;
-			}
 
 			float Chebychev(float variance, float mean, float depth) {
 				float res = variance/(variance + (depth - mean) * (depth - mean));
 				return variance;
 			}
-			
-			
-			/*void main (void)
-			{
-			  //vec3 depth = ProjShadow.xyz / ProjShadow.w;
-			  //depth.z = length(position.xyz - lightPos.xyz) * linDepth();
-			  //ProjShadow.z = length(position - lightPos) * linDepth();
-			  vec4 bufferSample = texture2D(shadowmap,ProjShadow.st);
-
-			  float distanceFromLight = bufferSample.z; //M1
-
-			  float distanceFromLightSquared = bufferSample.y; //M2
-
-			  float variance = distanceFromLightSquared - distanceFromLight * distanceFromLight; 
-			  
-			  float shadow = 1.0;
-			  vec3 color = vec3(1.0);
-
-			  //shadow = (distanceFromLight+0.05) > (ProjShadow.z) ? 1.0 : 0.5;
-			  shadow = (distanceFromLight+0.05) >= (ProjShadow.z) ? 1.0 : Chebychev(variance, distanceFromLight, ProjShadow.z);
-			  
-			  gl_FragColor = vec4(shadow * color, 1.0);//vec4(texture2D(shadowmap,ProjShadow.st).z);//vec4(shadow * color, 1.0);// //texture2D(shadowmap, texture_coordinate).x > 1.0 ? vec4(0,1,0,1) : vec4(1,0,0,1);
-  		  } */
 
   		  void main (void)
 			{
@@ -157,6 +111,8 @@
 			#ifdef GL_ES
 			precision highp float;
 			#endif
+			uniform vec3 color;
+			
 			varying vec3 vNormal;
 			varying vec3 vPosition;
 			varying vec4 ProjShadow;
@@ -179,6 +135,7 @@
 			  float bufferSample[9];
 			  float testVal = ProjShadow.z - 0.05;
 
+			  /* PCF 3x3 */
 			  float pw = 0.0009765625; // 1/1024 shadow map resolution
 			  bufferSample[0] = texture2D(shadowmap,vec2(ProjShadow.s-pw, ProjShadow.t-pw)).z  > (testVal) ? 1.0 : 0.0;
 			  bufferSample[1] = texture2D(shadowmap,vec2(ProjShadow.s, ProjShadow.t-pw)).z > (testVal) ? 1.0 : 0.0;
@@ -200,7 +157,7 @@
 			  
 			  float shadow = sum;
 			  float light = calcLighting(lightPos, vPosition.xyz, vNormal);
-			  vec3 color = vec3(1.0);
+			  //vec3 color = vec3(1.0);
 			  
 			  gl_FragColor = vec4(shadow * light * color, 1.0);
   		  }
@@ -243,20 +200,6 @@
 			varying vec4 depth;
 			varying mat4 projMatrix;
 			uniform vec3 lightPos;
-			
-			float denormDepth(vec4 d) {
-				float A = projMatrix[2].z;
-				float B = projMatrix[3].z;
-				float zNear = - B / (1.0 - A);
-				float zFar  =   B / (1.0 + A);
-
-			    //float z_b = d;
-				//float z_n = 2.0 * z_b - 1.0;
-				//float z_e = 2.0 * zNear * zFar / (zFar + zNear - z_n * (zFar - zNear));
-				float linear = 1.0 / (zFar - zNear);
-				float linearDepth = length(d) * linear;
-				return linearDepth;
-			}
 			
 			void main (void)
 			{
@@ -330,7 +273,7 @@
 				cameraLight.position.set( -50, 50, 100 ).normalize();
 				cameraLight.lookAt(new THREE.Vector3(0,0,0));
 
-				controls = new THREE.FlyControls( camera );
+				controls = new THREE.FlyControls( camera, container );
 				controls.dragToLook = true;
 				controls.movementSpeed = 14.0;
 				controls.rollSpeed = 0.5;
@@ -388,6 +331,7 @@
 				};
 				
 				uniformsShadow = {
+				  color: { type: "c", value: new THREE.Color( 0xffffff ) },
 				  lightPos: { type: "v3", value: cameraLight.position },
 				  shadowmap: { type: "t",  value: scene.rtTextureDepth  },
 				  shadowTestMap: { type: "t", value: scene.rtTextureTest },
@@ -480,8 +424,8 @@
 				var geometry = new THREE.CubeGeometry( 3, 3, 3);
 				cube = new THREE.Mesh( geometry, phongMaterial );
 					cube.position.y = 5;
-					cube.position.x = -10;
-					cube.position.z = 20;
+					cube.position.x = 10;
+					cube.position.z = 23;
 				scene.add(cube);
 				
 				
@@ -498,6 +442,33 @@
 				stats.domElement.style.position = 'absolute';
 				stats.domElement.style.top = '0px';
 				container.appendChild( stats.domElement );
+				
+				// GUI
+				var cubeConfigData = function() {
+					this.cubePositionX = 10.0;
+					this.lightPositionX = -50.0;
+					this.lightPositionZ = 100.0;
+				
+				}
+				
+				var cubeConfig = new cubeConfigData();
+				
+				var gui = new dat.GUI();
+				gui.add(cubeConfig, 'cubePositionX', -15.0, 15.0).onChange( function(){
+					cube.position.x = ( cubeConfig.cubePositionX );
+				} );;
+				gui.add(cubeConfig, 'lightPositionX', -50.0, 50.0).onChange( function(){
+					cameraLight.position.set( cubeConfig.lightPositionX, 50, cubeConfig.lightPositionZ ).normalize();
+					cameraLight.lookAt(new THREE.Vector3(0,0,0));
+				} );;
+				gui.add(cubeConfig, 'lightPositionZ', 30.0, 500.0).onChange( function(){
+					cameraLight.position.set( cubeConfig.lightPositionX, 50, cubeConfig.lightPositionZ ).normalize();
+					cameraLight.lookAt(new THREE.Vector3(0,0,0));
+				} );;
+				//  } );
+				  //g//ui.add(text, 'speed', -5, 5);
+				 // gui.add(text, 'displayOutline');
+				  //gui.add(text, 'explode');
 
 				
 				
@@ -574,7 +545,7 @@
 				//cameraLight.position.set( 10, 2*Math.sin(clock.getElapsedTime() / 2.0) + 2.3, 20 );
 				//cameraLight.lookAt(new THREE.Vector3(0,0,0));
 				//cameraLight.updateProjectionMatrix();
-				cube.position.x = 20 * Math.sin(clock.getElapsedTime());
+				//cube.position.x = 20 * Math.sin(clock.getElapsedTime());
 
 				//scene.add(plane);
 				//scene.add(plane2);
@@ -594,6 +565,7 @@
 				*/
 				controls.update( delta );
 				
+				uniformsShadow.color.needsUpdate = true;
 				if (mesh != undefined)
 				  mesh.material = pcfShadow;
 				cube.material = pcfShadow;
