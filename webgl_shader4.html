@@ -154,7 +154,7 @@
 
 			  vec3 depth = ProjShadow.xyz / ProjShadow.w;
 
-			  const int samples = 8;
+
 			  float sum = 0.0, x, y;
 			  float offset = -(float(samples) / 2.0) + 0.5;
 			 
@@ -383,6 +383,7 @@
 
 				var pcfVertexShader = document.getElementById( 'pcfVertexShader' ).textContent;
 				var pcfFragmentShader = document.getElementById( 'pcfFragmentShader' ).textContent;
+				/*
 				pcfShadow =
 				  new THREE.ShaderMaterial({
 					uniforms: uniformsShadow,
@@ -390,7 +391,8 @@
 					fragmentShader: pcfFragmentShader,
 					side: THREE.FrontSide
 				  });			  
-
+				*/
+				createPCFShaderMaterial(8);
 						
 				  // MATERIALS
 				phongMaterial = new THREE.MeshPhongMaterial( { ambient: 0x000000,
@@ -469,7 +471,7 @@
 					this.cubePositionX = 10.0;
 					this.lightPositionX = -50.0;
 					this.lightPositionZ = 100.0;
-					this.PCF_samples = 4;
+					this.PCF_samples = '8x8';
 				}
 				
 				var cubeConfig = new cubeConfigData();
@@ -487,20 +489,20 @@
 					cameraLight.lookAt(new THREE.Vector3(0,0,0));
 				} );;
 				
-				gui.add(cubeConfig, 'PCF_samples', [ '8x8' ] ).onChange( function(){
+				gui.add(cubeConfig, 'PCF_samples', [ '4x4', '8x8', '16x16', '32x32' ]).onChange( function(){
 					switch (cubeConfig.PCF_samples) {
 						default:
 						case "4x4":
-							uniformsShadow.samples.value = 4;
+							createPCFShaderMaterial(4);
 							break;
 						case "8x8":
-							uniformsShadow.samples.value = 8;
+							createPCFShaderMaterial(8);
 							break;	
 						case "16x16":
-							uniformsShadow.samples.value = 16;
+							createPCFShaderMaterial(16);
 							break;	
 						case "32x32":
-							uniformsShadow.samples.value = 16;
+							createPCFShaderMaterial(32);
 							break;	
 					}
 				} );;
@@ -554,6 +556,19 @@
 				render();
 				stats.update();
 
+			}
+			
+			function createPCFShaderMaterial(samples) {
+				var sampleString = "const int samples = " + samples + ";\n";
+				var pcfVertexShader = document.getElementById( 'pcfVertexShader' ).textContent;
+				var pcfFragmentShader = document.getElementById( 'pcfFragmentShader' ).textContent;
+				pcfShadow =
+				  new THREE.ShaderMaterial({
+					uniforms: uniformsShadow,
+					vertexShader:   pcfVertexShader,
+					fragmentShader: (sampleString + pcfFragmentShader),
+					side: THREE.FrontSide
+				  });		
 			}
 			
 			function toRadians (angle) {
