@@ -41,6 +41,15 @@
 		<script src="js/controls/FlyControls.js"></script>
 		<script src="js/libs/stats.min.js"></script>
 		<script src="dat.gui.min.js"></script>
+		
+		<script src="js/shaders/CopyShader.js"></script>
+		<script src="js/shaders/VerticalBlurShader.js"></script>
+		<script src="js/shaders/HorizontalBlurShader.js"></script>
+
+		<script src="js/postprocessing/EffectComposer.js"></script>
+		<script src="js/postprocessing/RenderPass.js"></script>
+		<script src="js/postprocessing/MaskPass.js"></script>
+		<script src="js/postprocessing/ShaderPass.js"></script>
 
 
 		<script id="shadowMapFragmentShader" type="x-shader/x-fragment">
@@ -56,13 +65,6 @@
 			uniform sampler2D shadowmap;
 			uniform vec3 lightPos;
 			varying vec2 texture_coordinate;
-			
-
-
-			float Chebychev(float variance, float mean, float depth) {
-				float res = variance/(variance + (depth - mean) * (depth - mean));
-				return variance;
-			}
 			
 			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
 				vec3 lightDir = normalize(lightPos);
@@ -81,7 +83,7 @@
 			  vec3 color = vec3(1.0);
 
 			  float light = calcLighting(lightPos, vPosition, vNormal);
-			  shadow = (distanceFromLight+0.05) > (depth.z) ? 1.0 : 0.5;
+			  shadow = (distanceFromLight+0.05) > (depth.z) ? 1.0 : 0.0;
 			  
 			  gl_FragColor = vec4(vec3(shadow * light), 1.0);
   		  }
@@ -89,6 +91,124 @@
 		</script>
 		
 		<script id="shadowMapVertexShader" type="x-shader/x-vertex">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec3 vNormal;
+			varying vec3 vPosition;
+			varying vec4 ProjShadow;
+
+			uniform vec3 lightPos;
+			uniform mat4 lightWorldMatrix;
+			uniform mat4 lightProjMatrix;
+			varying vec2 texture_coordinate;
+			mat4 bias;
+			
+			void main(void)
+			{
+				bias = mat4(0.5, 0.0, 0.0, 0.0,
+                         0.0, 0.5, 0.0, 0.0,
+                         0.0, 0.0, 1.0, 0.0,
+                         0.5, 0.5, 0.0, 1.0);
+						 
+				vNormal = normalize(mat3(modelMatrix) * normal);
+				vPosition = position;
+				
+				ProjShadow	=  bias * lightProjMatrix * lightWorldMatrix * modelMatrix * vec4(position, 1.0);
+				gl_Position =  projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);
+			}
+		</script>
+		
+		<script id="vsmFragmentShader" type="x-shader/x-fragment">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec3 vNormal;
+			varying vec3 vPosition;
+			varying vec4 ProjShadow;
+			
+			uniform mat4 lightProjMatrix;
+			
+			uniform sampler2D shadowmap;
+			uniform vec3 lightPos;
+			varying vec2 texture_coordinate;
+			
+
+
+			float Chebychev(float variance, float mean, float depth) {
+				float res = variance/(variance + ((depth - mean) * (depth - mean)));
+				return res;
+			}
+			
+			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
+				vec3 lightDir = normalize(lightPos);
+				return 0.3 + (0.7 * dot(lightDir, vertNormal));
+		    }
+
+  		  void main (void)
+			{
+			  vec3 depth = ProjShadow.xyz / ProjShadow.w;
+
+			  vec4 bufferSample = texture2D(shadowmap, depth.st);
+
+			  float distanceFromLight = bufferSample.z; //M1
+			  float variance = bufferSample.y - (distanceFromLight * distanceFromLight);
+			  
+			  float shadow = 1.0;
+			  vec3 color = vec3(1.0);
+
+			  float light = calcLighting(lightPos, vPosition, vNormal);
+	
+	          shadow = (distanceFromLight+0.001) > (depth.z) ? 1.0 : Chebychev(variance, distanceFromLight, depth.z);
+			  
+			  gl_FragColor = vec4(vec3(shadow * light), 1.0);
+  		  }
+
+		</script>
+		<script id="esmFragmentShader" type="x-shader/x-fragment">
+			#ifdef GL_ES
+			precision highp float;
+			#endif
+			varying vec3 vNormal;
+			varying vec3 vPosition;
+			varying vec4 ProjShadow;
+			
+			uniform mat4 lightProjMatrix;
+			
+			uniform sampler2D shadowmap;
+			uniform vec3 lightPos;
+			varying vec2 texture_coordinate;
+			uniform float expFactor;
+			
+			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
+				vec3 lightDir = normalize(lightPos);
+				return 0.3 + (0.7 * dot(lightDir, vertNormal));
+		    }
+
+  		  void main (void)
+			{
+			  vec3 depth = ProjShadow.xyz / ProjShadow.w;
+
+			  vec4 bufferSample = texture2D(shadowmap, depth.st);
+
+			  float distanceFromLight = bufferSample.z; //M1
+			  float variance = bufferSample.y - (distanceFromLight * distanceFromLight);
+			  
+			  float shadow = 1.0;
+			  vec3 color = vec3(1.0);
+
+			  float light = calcLighting(lightPos, vPosition, vNormal);
+		
+
+			  //shadow = exp(40.15 * (bufferSample.z - depth.z));//shadow = exp(-80.0 * depth.z) * bufferSample.x; //(distanceFromLight+0.001) > (depth.z) ? 1.0 : Chebychev(variance, distanceFromLight, depth.z);
+			  shadow = exp(-1.0 * expFactor * depth.z) * bufferSample.x;
+			  shadow = clamp(shadow, 0.0, 1.0);
+			  
+			  gl_FragColor = vec4(vec3(shadow * light), 1.0);
+  		  }
+
+		</script>
+		<script id="vsmVertexShader" type="x-shader/x-vertex">
 			#ifdef GL_ES
 			precision highp float;
 			#endif
@@ -220,11 +340,12 @@
 			varying vec4 depth;
 			varying mat4 projMatrix;
 			uniform vec3 lightPos;
+			uniform float expFactor;
 			
 			void main (void)
 			{
 			  //gl_FragColor = vec4(vec3(depth.z), 1.0);
-			  gl_FragColor = vec4(0.0, depth.z * depth.z, depth.z, 1.0);
+			  gl_FragColor = vec4(exp(expFactor * depth.z), depth.z * depth.z, depth.z, 1.0);
 			}
 		</script>
 
@@ -274,8 +395,11 @@
 			var clock = new THREE.Clock();
 			
 			var uniformsShadow, uniformsDepth;
+			var exponential = 40.0;
 			
 			var composer;
+			
+			var secondPassShaderMaterial;
 
 			//ThreeJS.init();
 			init();
@@ -289,7 +413,7 @@
 				camera = new THREE.PerspectiveCamera( 40, windowHalfX / windowHalfY, 3, 200 );
 				camera.position.set( 0, 20, 100 );
 				
-				cameraLight = new THREE.OrthographicCamera( -30, 30, 30, -30, -100.0, 10.0 );
+				cameraLight = new THREE.OrthographicCamera( -30, 30, 30, -30, -100.0, 100.0 );
 				cameraLight.position.set( -50, 50, 100 ).normalize();
 				cameraLight.lookAt(new THREE.Vector3(0,0,0));
 
@@ -347,7 +471,8 @@
 				
 				uniformsDepth = {
 				  lightWorldMatrix: { type: "m4", value: cameraLight.matrixWorldInverse },
-				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix }
+				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix },
+				  expFactor: { type: "f", value: exponential }
 				};
 				
 				uniformsShadow = {
@@ -357,7 +482,8 @@
 				  shadowmap: { type: "t",  value: scene.rtTextureDepth  },
 				  shadowTestMap: { type: "t", value: scene.rtTextureTest },
 				  lightWorldMatrix: { type: "m4", value: cameraLight.matrixWorldInverse },
-				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix }
+				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix },
+				  expFactor: { type: "f", value: exponential }
 				};
 				
 				
@@ -371,6 +497,7 @@
 					side: THREE.DoubleSide
 				  });
 				  
+				// CREATE STANDARD SHADER
 				var vxShader = document.getElementById( 'shadowMapVertexShader' ).textContent;
 				var fxShader = document.getElementById( 'shadowMapFragmentShader' ).textContent;
 				shaderMaterialShadow =
@@ -380,19 +507,38 @@
 					fragmentShader: fxShader,
 					side: THREE.FrontSide
 				  });
+				  
 
+				// CREATE PCF SHADER
 				var pcfVertexShader = document.getElementById( 'pcfVertexShader' ).textContent;
 				var pcfFragmentShader = document.getElementById( 'pcfFragmentShader' ).textContent;
-				/*
-				pcfShadow =
+
+				createPCFShaderMaterial(8);
+				
+				
+				// CREATE VSM SHADER
+				var vsmVertexShader = document.getElementById( 'vsmVertexShader' ).textContent;
+				var vsmFragmentShader = document.getElementById( 'vsmFragmentShader' ).textContent;
+				
+				vsmShadow =
 				  new THREE.ShaderMaterial({
 					uniforms: uniformsShadow,
-					vertexShader:   pcfVertexShader,
-					fragmentShader: pcfFragmentShader,
+					vertexShader:   vsmVertexShader,
+					fragmentShader: vsmFragmentShader,
 					side: THREE.FrontSide
-				  });			  
-				*/
-				createPCFShaderMaterial(8);
+				  });
+				
+				// CREATE ESM SHADER
+				var esmVertexShader = document.getElementById( 'vsmVertexShader' ).textContent;
+				var esmFragmentShader = document.getElementById( 'esmFragmentShader' ).textContent;
+				
+				esmShadow =
+				  new THREE.ShaderMaterial({
+					uniforms: uniformsShadow,
+					vertexShader:   vsmVertexShader,
+					fragmentShader: esmFragmentShader,
+					side: THREE.FrontSide
+				  });			
 						
 				  // MATERIALS
 				phongMaterial = new THREE.MeshPhongMaterial( { ambient: 0x000000,
@@ -401,6 +547,10 @@
                     shininess: 30,
                     side: THREE.FrontSide } );
 				depthMaterial = new THREE.MeshDepthMaterial( { side: THREE.DoubleSide, overdraw: false });
+				
+				
+				// SET DEFAULT SHADER
+				secondPassShaderMaterial = shaderMaterialShadow;
 				
 				// create a point light
 				//var pointLight = new THREE.PointLight(0xFFFFFF);
@@ -417,8 +567,8 @@
 
 				
 				// OBJECTS
-				plane = new THREE.Mesh( new THREE.PlaneGeometry( 50, 50, 10, 10 ), shaderMaterialDepth );
-				plane.position.z = 20;
+				plane = new THREE.Mesh( new THREE.PlaneGeometry( 50, 150, 10, 10 ), shaderMaterialDepth );
+				plane.position.z = -20;
 				plane.rotation.x = - Math.PI / 2;
 				scene.add(plane);
 				
@@ -442,7 +592,6 @@
 					scene.add(mesh);
 				} );
 
-				
 				
 				var geometry = new THREE.CubeGeometry( 3, 3, 3);
 				cube = new THREE.Mesh( geometry, phongMaterial );
@@ -468,18 +617,57 @@
 				
 				// GUI
 				var cubeConfigData = function() {
+					this.mode = "None";
 					this.cubePositionX = 10.0;
+					this.cubePositionZ = 5.0;
 					this.lightPositionX = -50.0;
 					this.lightPositionZ = 100.0;
+					this.dragonPositionY = 0.0;
 					this.PCF_samples = '8x8';
+					this.expConstant = 30.0;
 				}
 				
+				// SET UP GUI EVENTS
 				var cubeConfig = new cubeConfigData();
 				
 				var gui = new dat.GUI();
+				var pcfFolder;
+				var expFolder;
+				
+				gui.add(cubeConfig, 'mode', [ 'None', 'Percentage close', 'Variance', 'Exponential' ]).onChange( function(){
+					switch(cubeConfig.mode) {
+						default:
+						case "None":
+							secondPassShaderMaterial = shaderMaterialShadow;
+							break;
+						case "Percentage close":
+							secondPassShaderMaterial = pcfShadow;
+							pcfFolder.open();
+							expFolder.close();
+							break;
+						case "Variance":
+							secondPassShaderMaterial = vsmShadow;
+							break;	
+						case "Exponential":
+							secondPassShaderMaterial = esmShadow;
+							pcfFolder.close();
+							expFolder.open();
+							break;
+					}
+				} );;
+				
 				gui.add(cubeConfig, 'cubePositionX', -15.0, 15.0).onChange( function(){
 					cube.position.x = ( cubeConfig.cubePositionX );
 				} );;
+				
+				gui.add(cubeConfig, 'cubePositionZ', -15.0, 30.0).onChange( function(){
+					cube.position.z = ( cubeConfig.cubePositionZ );
+				} );;
+				
+				gui.add(cubeConfig, 'dragonPositionY', 0.0, 10.0).onChange( function(){
+					mesh.position.y = ( cubeConfig.dragonPositionY );
+				} );;
+				
 				gui.add(cubeConfig, 'lightPositionX', -50.0, 50.0).onChange( function(){
 					cameraLight.position.set( cubeConfig.lightPositionX, 50, cubeConfig.lightPositionZ ).normalize();
 					cameraLight.lookAt(new THREE.Vector3(0,0,0));
@@ -489,7 +677,10 @@
 					cameraLight.lookAt(new THREE.Vector3(0,0,0));
 				} );;
 				
-				gui.add(cubeConfig, 'PCF_samples', [ '4x4', '8x8', '16x16', '32x32' ]).onChange( function(){
+
+				
+				pcfFolder = gui.addFolder('PCF');
+				pcfFolder.add(cubeConfig, 'PCF_samples', [ '4x4', '8x8', '16x16', '32x32' ]).onChange( function(){
 					switch (cubeConfig.PCF_samples) {
 						default:
 						case "4x4":
@@ -505,7 +696,15 @@
 							createPCFShaderMaterial(32);
 							break;	
 					}
+					secondPassShaderMaterial = pcfShadow;
 				} );;
+				var vsmFolder = gui.addFolder('VSM');
+				expFolder = gui.addFolder('Exp');
+				expFolder.add(cubeConfig, 'expConstant', 0.0, 200.0).onChange( function(){
+					uniformsShadow.expFactor.value = cubeConfig.expConstant;
+					uniformsDepth.expFactor.value = cubeConfig.expConstant;
+				} );;
+				
 				
 				//  } );
 				  //g//ui.add(text, 'speed', -5, 5);
@@ -519,16 +718,23 @@
 				window.addEventListener( 'resize', onWindowResize, false );
 				
 				// Effects composer
-				/*
-				composer = new THREE.EffectComposer( renderer, scene.rtTextureDepth );
 				
+				composer = new THREE.EffectComposer( renderer , scene.rtTextureDepth );
 				
-				var shader = THREE.CopyShader;
-				shader.uniforms.tDiffuse = scene.rtTextureDepth;
-				var effect = new THREE.ShaderPass( THREE.CopyShader );
-				effect.renderToScreen = true;
-				composer.addPass( effect );
-				*/
+				hblur = new THREE.ShaderPass( THREE.HorizontalBlurShader );
+				composer.addPass( hblur );
+				
+				vblur = new THREE.ShaderPass( THREE.VerticalBlurShader);
+				vblur.renderToScreen = false;
+				composer.addPass( vblur );
+				
+				var copy = new THREE.ShaderPass( THREE.CopyShader );
+				//var shader = THREE.CopyShader;
+				//shader.uniforms.tDiffuse = scene.rtTextureDepth;
+				
+				//effect.renderToScreen = true;
+				composer.addPass( copy );
+				
 
 
 			}
@@ -596,6 +802,8 @@
 				plane.material = shaderMaterialDepth;
 				//plane2.material = depthMaterial;
 				renderer.render( scene, cameraLight, scene.rtTextureDepth, true );
+				composer.render( );
+
 				//cameraLight.position.x += 0.1;
 				//cameraLight.position.set( 10, 2*Math.sin(clock.getElapsedTime() / 2.0) + 2.3, 20 );
 				//cameraLight.lookAt(new THREE.Vector3(0,0,0));
@@ -622,12 +830,12 @@
 				
 				//composer.render();
 				if (mesh != undefined)
-				  mesh.material = pcfShadow;
-				cube.material = pcfShadow;
-				plane.material = pcfShadow;
+				  mesh.material = secondPassShaderMaterial;
+				cube.material = secondPassShaderMaterial;
+				plane.material = secondPassShaderMaterial;
 
 				renderer.render( scene, camera );
-				
+
 				
 				controls.update( delta );
 				

@@ -19,8 +19,8 @@ THREE.EffectComposer = function ( renderer, renderTarget ) {
 	this.renderTarget1 = renderTarget;
 	this.renderTarget2 = renderTarget.clone();
 
-	this.writeBuffer = this.renderTarget1;
-	this.readBuffer = this.renderTarget2;
+	this.writeBuffer = this.renderTarget2;
+	this.readBuffer = this.renderTarget1;
 
 	this.passes = [];
 
@@ -55,8 +55,8 @@ THREE.EffectComposer.prototype = {
 
 	render: function ( delta ) {
 
-		this.writeBuffer = this.renderTarget1;
-		this.readBuffer = this.renderTarget2;
+		this.writeBuffer = this.renderTarget2;
+		this.readBuffer = this.renderTarget1;
 
 		var maskActive = false;
 
