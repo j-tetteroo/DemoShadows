@@ -27,6 +27,23 @@
 
 				color: #ffffff;
 			}
+			
+			#stats #fps {
+				padding: 1px !important;
+				box-shadow: 1px 1px 3px rgba(0,0,0,.95) inset, 0px 0px 0px rgba(0,0,0,.75), 1px 1px 0px rgba(255,255,255,.25);
+			}
+
+			#stats #fps #fpsText {
+				font-size: large;
+				left: 1px;
+				color: #80ccff !important;
+				background-image: -o-linear-gradient(top, rgba(255,255,255,.4) 0%, rgba(0,0,0,.35) 100%);
+				background-image: -moz-linear-gradient(top, rgba(255,255,255,.4) 0%, rgba(0,0,0,.35) 100%);
+				background-image: -webkit-linear-gradient(top, rgba(255,255,255,.4) 0%, rgba(0,0,0,.35) 100%);
+				background-image: -ms-linear-gradient(top, rgba(255,255,255,.4) 0%, rgba(0,0,0,.35) 100%);
+				background-image: linear-gradient(top, rgba(255,255,255,.4) 0%, rgba(0,0,0,.35) 100%);
+				padding: 0 1px;
+			}
 
 			#oldie a { color:#da0 }
 		</style>
@@ -253,6 +270,8 @@
 			uniform sampler2D shadowTestMap;
 			uniform vec3 lightPos;
 			varying vec2 texture_coordinate;
+			
+			uniform float mapScale;
 
 			
 			float calcLighting(vec3 lightPos, vec3 vertexPos, vec3 vertNormal) {
@@ -264,7 +283,8 @@
 								 vec4 loc,
 								 vec2 offset)
 			{   
-				float texmapscale = 0.0009765625; // 1/1024 shadow map resolution
+				//float texmapscale = 0.0009765625; // 1/1024 shadow map resolution
+				float texmapscale = mapScale;
 				return texture2DProj(map, vec4(loc.xy + offset * texmapscale * loc.w,
 											   loc.z, loc.w));
 			}
@@ -448,20 +468,7 @@
 																	}
 																);
 
-				scene.rtTextureTest = new THREE.WebGLRenderTarget(
-																	1024,
-																	1024,
-																	{
-																	wrapS			: THREE.ClampToEdgeWrapping,
-																	wrapT			: THREE.ClampToEdgeWrapping,
-																	minFilter		: THREE.NearestFilter,
-																	magFilter		: THREE.NearestFilter,
-																	format			: THREE.RGBAFormat,
-																	type			: THREE.FloatType,
-																	depthBuffer		: true,
-																	stencilBuffer	: false
-																	}
-																);
+
 				
 				directionalLight = new THREE.DirectionalLight( 0xffffff );
 				directionalLight.position.set( 0, 0, 20 ).normalize();
@@ -469,12 +476,15 @@
 				directionalLight.exponent = 10;
 				scene.add( directionalLight );
 				
+				// DEPTH SHADER UNIFORMS
 				uniformsDepth = {
 				  lightWorldMatrix: { type: "m4", value: cameraLight.matrixWorldInverse },
 				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix },
 				  expFactor: { type: "f", value: exponential }
 				};
 				
+				
+				// SHADOW PASS UNIFORMS
 				uniformsShadow = {
 				  color: { type: "c", value: new THREE.Color( 0xffffff ) },
 				  samples: { type: "i", value: 4 },
@@ -483,7 +493,8 @@
 				  shadowTestMap: { type: "t", value: scene.rtTextureTest },
 				  lightWorldMatrix: { type: "m4", value: cameraLight.matrixWorldInverse },
 				  lightProjMatrix: { type: "m4", value: cameraLight.projectionMatrix },
-				  expFactor: { type: "f", value: exponential }
+				  expFactor: { type: "f", value: exponential },
+				  mapScale: { type: "f", value: 1.0 / 1024.0 }
 				};
 				
 				
@@ -552,19 +563,6 @@
 				// SET DEFAULT SHADER
 				secondPassShaderMaterial = shaderMaterialShadow;
 				
-				// create a point light
-				//var pointLight = new THREE.PointLight(0xFFFFFF);
-
-				// set its position
-				//pointLight.position.x = 10;
-				//pointLight.position.y = 50;
-				//pointLight.position.z = 130;
-
-				// add to the scene
-				//scene.add(pointLight);
-				
-				//var material = new THREE.MeshLambertMaterial( { map: scene.rtTextureDepth } );
-
 				
 				// OBJECTS
 				plane = new THREE.Mesh( new THREE.PlaneGeometry( 50, 150, 10, 10 ), shaderMaterialDepth );
@@ -618,6 +616,7 @@
 				// GUI
 				var cubeConfigData = function() {
 					this.mode = "None";
+					this.shadowmapResolution = 1024;
 					this.cubePositionX = 10.0;
 					this.cubePositionZ = 5.0;
 					this.lightPositionX = -50.0;
@@ -654,6 +653,27 @@
 							expFolder.open();
 							break;
 					}
+				} );;
+				
+				gui.add(cubeConfig, 'shadowmapResolution', [ 256, 512, 1024 ]).onChange( function(){
+					scene.rtTextureDepth = new THREE.WebGLRenderTarget(
+													cubeConfig.shadowmapResolution,
+													cubeConfig.shadowmapResolution,
+													{
+													wrapS			: THREE.ClampToEdgeWrapping,
+													wrapT			: THREE.ClampToEdgeWrapping,
+													minFilter		: THREE.NearestFilter,
+													magFilter		: THREE.NearestFilter,
+													format			: THREE.RGBAFormat,
+													type			: THREE.FloatType,
+													depthBuffer		: true,
+													stencilBuffer	: false
+													}
+												);
+					composer = new THREE.EffectComposer( renderer , scene.rtTextureDepth );
+					uniformsShadow.mapScale.value = 1.0 / cubeConfig.shadowmapResolution;
+					uniformsShadow.shadowmap.value = scene.rtTextureDepth;
+					setupComposer();
 				} );;
 				
 				gui.add(cubeConfig, 'cubePositionX', -15.0, 15.0).onChange( function(){
@@ -696,9 +716,10 @@
 							createPCFShaderMaterial(32);
 							break;	
 					}
-					secondPassShaderMaterial = pcfShadow;
+					if (cubeConfig.mode == "Percentage close")
+						secondPassShaderMaterial = pcfShadow;
+
 				} );;
-				var vsmFolder = gui.addFolder('VSM');
 				expFolder = gui.addFolder('Exp');
 				expFolder.add(cubeConfig, 'expConstant', 0.0, 200.0).onChange( function(){
 					uniformsShadow.expFactor.value = cubeConfig.expConstant;
@@ -718,7 +739,14 @@
 				window.addEventListener( 'resize', onWindowResize, false );
 				
 				// Effects composer
+				setupComposer();
+		
 				
+
+
+			}
+			
+			function setupComposer() {
 				composer = new THREE.EffectComposer( renderer , scene.rtTextureDepth );
 				
 				hblur = new THREE.ShaderPass( THREE.HorizontalBlurShader );
@@ -734,9 +762,6 @@
 				
 				//effect.renderToScreen = true;
 				composer.addPass( copy );
-				
-
-
 			}
 
 			function onWindowResize( event ) {
